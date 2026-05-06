@@ -3,30 +3,31 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
+// Lock em memória (não usa navigator.locks que fica órfão entre tabs/reloads).
+// Serializa chamadas para evitar race conditions no refresh de token.
+let _lockChain = Promise.resolve()
+const memoryLock = (name, acquireTimeout, fn) => {
+  const next = _lockChain.then(() => fn(), () => fn())
+  _lockChain = next.catch(() => {})
+  return next
+}
+
 export const supabase = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        // Renova token automaticamente antes de expirar
         autoRefreshToken: true,
-        // Mantém sessão entre reloads
         persistSession: true,
-        // Detecta callback de OAuth (Google) na URL
         detectSessionInUrl: true,
-        // Storage explícito
         storage: typeof window !== 'undefined' ? window.localStorage : undefined,
         flowType: 'pkce',
-        // CRITICAL: Desabilita o lock de navigator.locks que fica órfão e trava sync
-        lock: (name, acquireTimeout, fn) => fn(),
+        // Lock customizado: evita o navigator.locks órfão que travava o sync
+        lock: memoryLock,
       },
       realtime: {
-        params: {
-          eventsPerSecond: 10,
-        },
+        params: { eventsPerSecond: 10 },
       },
       global: {
-        headers: {
-          'x-client-info': 'agenda-politica-web',
-        },
+        headers: { 'x-client-info': 'agenda-politica-web' },
       },
     })
   : null

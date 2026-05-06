@@ -96,9 +96,29 @@ export default function App() {
     }
     document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('focus', handleVisibility)
+
+    // Refresh automático a cada 30s — força renovação de token e re-sync
+    // Isso garante que a sessão nunca fique "presa" depois de um tempo
+    const interval = setInterval(async () => {
+      if (document.hidden) return
+      try {
+        const { supabase } = await import('@/lib/supabase')
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          // Se token expira em menos de 5min, força refresh
+          const expiresIn = session.expires_at - Date.now() / 1000
+          if (expiresIn < 300) {
+            await supabase.auth.refreshSession()
+          }
+          syncFromServer?.()
+        }
+      } catch (e) { console.warn('[interval refresh]', e.message) }
+    }, 30000)
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('focus', handleVisibility)
+      clearInterval(interval)
     }
   }, [isAuthenticated])
 
