@@ -248,31 +248,79 @@ export const storageService = {
     const ext = file.name.split('.').pop()
     const fileName = `logo-${Date.now()}.${ext}`
 
-    const { data, error } = await supabase.storage
-      .from('logos')
-      .upload(fileName, file, { cacheControl: '3600', upsert: true })
+    try {
+      const sbKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+      const session = sbKey ? JSON.parse(localStorage.getItem(sbKey)) : null
+      const token = session?.access_token
+      if (!token) return { error: 'Você precisa estar logado' }
 
-    if (error) return { error: error.message }
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const apikey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const url = `${supabaseUrl}/storage/v1/object/logos/${encodeURIComponent(fileName)}`
 
-    const { data: urlData } = supabase.storage.from('logos').getPublicUrl(fileName)
-    return { url: urlData.publicUrl }
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'authorization': `Bearer ${token}`,
+          'apikey': apikey,
+          'x-upsert': 'true',
+          'content-type': file.type || 'application/octet-stream',
+          'cache-control': '3600',
+        },
+        body: file,
+      })
+
+      if (!r.ok) {
+        const errText = await r.text()
+        return { error: `Upload falhou (${r.status}): ${errText}` }
+      }
+
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/logos/${encodeURIComponent(fileName)}`
+      return { url: publicUrl }
+    } catch (e) {
+      return { error: e.message || 'Erro ao enviar logo' }
+    }
   },
 
   async uploadFlyer(file) {
     if (!isSupabaseConfigured) return { error: 'Supabase não configurado' }
 
-    const ext = file.name.split('.').pop()
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 50)
     const fileName = `flyer-${Date.now()}-${safeName}`
 
-    const { error } = await supabase.storage
-      .from('flyers')
-      .upload(fileName, file, { cacheControl: '3600', upsert: false })
+    try {
+      // Pega token diretamente do localStorage (bypass do SDK que pode travar)
+      const sbKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+      const session = sbKey ? JSON.parse(localStorage.getItem(sbKey)) : null
+      const token = session?.access_token
+      if (!token) return { error: 'Você precisa estar logado' }
 
-    if (error) return { error: error.message }
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const apikey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const url = `${supabaseUrl}/storage/v1/object/flyers/${encodeURIComponent(fileName)}`
 
-    const { data: urlData } = supabase.storage.from('flyers').getPublicUrl(fileName)
-    return { url: urlData.publicUrl, name: file.name, path: fileName }
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'authorization': `Bearer ${token}`,
+          'apikey': apikey,
+          'x-upsert': 'false',
+          'content-type': file.type || 'application/octet-stream',
+          'cache-control': '3600',
+        },
+        body: file,
+      })
+
+      if (!r.ok) {
+        const errText = await r.text()
+        return { error: `Upload falhou (${r.status}): ${errText}` }
+      }
+
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/flyers/${encodeURIComponent(fileName)}`
+      return { url: publicUrl, name: file.name, path: fileName }
+    } catch (e) {
+      return { error: e.message || 'Erro ao enviar arquivo' }
+    }
   },
 
   async deleteFlyer(path) {

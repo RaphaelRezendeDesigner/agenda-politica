@@ -71,7 +71,8 @@
       "Bash(sed -i '' 's/demandsService\\\\.update\\(id, { \\\\.\\\\.\\\\.data, updated_by: user?.id }\\)/demandsService.update\\(id, cleanPayload\\({ ...data, updated_by: user?.id }\\)\\)/g' src/store/useStore.js)",
       "Bash(sed -i '' 's/notesService\\\\.create\\(payload\\)/notesService.create\\(cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)",
       "Bash(curl -s -A 'Mozilla/5.0' https://agenda-politica-inky.vercel.app/)",
-      "Bash(curl -s -A 'Mozilla/5.0' -i \"https://agenda-politica-inky.vercel.app/api/calendar/d50f9042-fab1-42ff-af37-4a75a91d3ced.ics\")"
+      "Bash(curl -s -A 'Mozilla/5.0' -i \"https://agenda-politica-inky.vercel.app/api/calendar/d50f9042-fab1-42ff-af37-4a75a91d3ced.ics\")",
+      "Bash(curl -s https://uxwnxwxwiahtygxnhzvb.supabase.co/storage/v1/bucket/flyers -H 'apikey: sb_publishable_UtkoO_x1wQPwUXWAIE0gWA_ytOSZ8H-' -H 'Authorization: Bearer sb_publishable_UtkoO_x1wQPwUXWAIE0gWA_ytOSZ8H-')"
     ]
   }
 }
