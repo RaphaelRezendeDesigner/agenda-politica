@@ -257,6 +257,28 @@ export const storageService = {
     const { data: urlData } = supabase.storage.from('logos').getPublicUrl(fileName)
     return { url: urlData.publicUrl }
   },
+
+  async uploadFlyer(file) {
+    if (!isSupabaseConfigured) return { error: 'Supabase não configurado' }
+
+    const ext = file.name.split('.').pop()
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 50)
+    const fileName = `flyer-${Date.now()}-${safeName}`
+
+    const { error } = await supabase.storage
+      .from('flyers')
+      .upload(fileName, file, { cacheControl: '3600', upsert: false })
+
+    if (error) return { error: error.message }
+
+    const { data: urlData } = supabase.storage.from('flyers').getPublicUrl(fileName)
+    return { url: urlData.publicUrl, name: file.name, path: fileName }
+  },
+
+  async deleteFlyer(path) {
+    if (!isSupabaseConfigured || !path) return
+    await supabase.storage.from('flyers').remove([path])
+  },
 }
 
 export const settingsService = {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Edit2, Trash2, MapPin, Clock, Calendar, Users,
-  CheckCircle, ExternalLink, FileText, MessageSquare, Share2, Copy
+  CheckCircle, ExternalLink, FileText, MessageSquare, Share2, Copy, Download, Image as ImageIcon
 } from 'lucide-react'
 import Layout from '@/components/layout/Layout'
 import { Button, Badge, Card, Modal, ConfirmDialog } from '@/components/ui'
@@ -192,6 +192,50 @@ export default function AppointmentDetailPage() {
                 </span>
               ))}
             </div>
+          </Card>
+        )}
+
+        {/* Flyer / Documento */}
+        {apt.flyer_url && (
+          <Card>
+            <h3 className={cn('font-semibold mb-3 flex items-center gap-2', darkMode ? 'text-white' : 'text-gray-900')}>
+              {/\.(png|jpe?g|gif|webp|svg)$/i.test(apt.flyer_url) ? (
+                <ImageIcon size={16} style={{ color: primaryColor }} />
+              ) : (
+                <FileText size={16} style={{ color: primaryColor }} />
+              )}
+              Flyer / Documento
+            </h3>
+            {/\.(png|jpe?g|gif|webp|svg)$/i.test(apt.flyer_url) ? (
+              <a href={apt.flyer_url} target="_blank" rel="noopener noreferrer" className="block">
+                <img
+                  src={apt.flyer_url}
+                  alt={apt.flyer_name || 'Flyer'}
+                  className="max-w-full max-h-96 rounded-lg border border-gray-200 dark:border-gray-700 hover:opacity-90 transition-opacity"
+                />
+              </a>
+            ) : (
+              <a
+                href={apt.flyer_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  'flex items-center gap-3 p-3 rounded-lg border transition-colors',
+                  darkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50'
+                )}
+              >
+                <div className="w-12 h-12 rounded bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
+                  <FileText size={24} className="text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={cn('text-sm font-medium truncate', darkMode ? 'text-white' : 'text-gray-900')}>
+                    {apt.flyer_name || 'Documento anexado'}
+                  </p>
+                  <p className="text-xs text-gray-400">Clique para visualizar/baixar</p>
+                </div>
+                <Download size={18} className="text-gray-400" />
+              </a>
+            )}
           </Card>
         )}
 

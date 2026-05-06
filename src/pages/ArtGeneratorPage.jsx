@@ -94,6 +94,40 @@ export default function ArtGeneratorPage() {
     setDownloading(false)
   }
 
+  const handleDownloadPDF = async () => {
+    setDownloading(true)
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+      const canvas = await html2canvas(artRef.current, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: formatCfg.width,
+        height: formatCfg.height,
+      })
+      const imgData = canvas.toDataURL('image/jpeg', 0.92)
+      // PDF na proporção do formato escolhido
+      const isPortrait = formatCfg.height > formatCfg.width
+      const pdf = new jsPDF({
+        orientation: isPortrait ? 'portrait' : 'landscape',
+        unit: 'pt',
+        format: [formatCfg.width, formatCfg.height],
+        compress: true,
+      })
+      pdf.addImage(imgData, 'JPEG', 0, 0, formatCfg.width, formatCfg.height, undefined, 'FAST')
+      pdf.save(`agenda-${artDate}-${format_}.pdf`)
+    } catch (e) {
+      console.error(e)
+      alert('Erro ao gerar PDF: ' + e.message)
+    }
+    setDownloading(false)
+  }
+
   const headerLabel = useMemo(() => {
     if (mode === 'dia') {
       const d = new Date(artDate + 'T12:00:00')
@@ -623,10 +657,19 @@ export default function ArtGeneratorPage() {
               )}
             </Card>
 
-            <Button onClick={handleDownload} className="w-full" size="lg" disabled={selectedApts.length === 0 || downloading}>
-              {downloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-              {downloading ? 'Gerando imagem...' : `Baixar ${formatCfg.description}`}
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button onClick={handleDownload} size="lg" disabled={selectedApts.length === 0 || downloading}>
+                {downloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                Baixar PNG
+              </Button>
+              <Button onClick={handleDownloadPDF} variant="secondary" size="lg" disabled={selectedApts.length === 0 || downloading}>
+                {downloading ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                Baixar PDF
+              </Button>
+            </div>
+            {selectedApts.length === 0 && (
+              <p className="text-xs text-gray-400 text-center">Selecione pelo menos 1 compromisso</p>
+            )}
           </div>
 
           {/* Preview */}
