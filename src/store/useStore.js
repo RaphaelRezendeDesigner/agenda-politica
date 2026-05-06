@@ -8,6 +8,16 @@ import {
 import { supabase } from '@/lib/supabase'
 import { mockSettings } from './mockData'
 
+// Helper: converte strings vazias em null (Postgres rejeita "" em UUID/DATE/INTEGER)
+function cleanPayload(obj) {
+  if (!obj || typeof obj !== 'object') return obj
+  const cleaned = {}
+  for (const [k, v] of Object.entries(obj)) {
+    cleaned[k] = (typeof v === 'string' && v.trim() === '') ? null : v
+  }
+  return cleaned
+}
+
 // Helper: aplica mudança em uma lista local com base num evento realtime
 function applyRealtimeChange(list, payload) {
   const { eventType, new: newRow, old: oldRow } = payload
@@ -255,7 +265,7 @@ const useStore = create(
         }
 
         // Supabase-puro: erro propaga pra UI
-        const created = await appointmentsService.create(payload)
+        const created = await appointmentsService.create(cleanPayload(payload))
         set(state => {
           if (state.appointments.some(a => a.id === created.id)) return state
           return { appointments: [...state.appointments, created] }
@@ -275,7 +285,7 @@ const useStore = create(
           }))
           return
         }
-        const updated = await appointmentsService.update(id, payload)
+        const updated = await appointmentsService.update(id, cleanPayload(payload))
         set(state => ({
           appointments: state.appointments.map(a => a.id === id ? updated : a)
         }))
@@ -310,7 +320,7 @@ const useStore = create(
           return newDemand
         }
 
-        const created = await demandsService.create(payload)
+        const created = await demandsService.create(cleanPayload(payload))
         try { await historyService.add(created.id, 'Criação', 'Demanda cadastrada', user?.id) } catch (e) { console.warn('history:', e.message) }
         set(state => {
           if (state.demands.some(d => d.id === created.id)) return state
@@ -335,7 +345,7 @@ const useStore = create(
           return
         }
 
-        const updated = await demandsService.update(id, { ...data, updated_by: user?.id })
+        const updated = await demandsService.update(id, cleanPayload({ ...data, updated_by: user?.id }))
         set(state => ({
           demands: state.demands.map(d => d.id === id ? updated : d)
         }))
@@ -379,7 +389,7 @@ const useStore = create(
           return
         }
 
-        const created = await notesService.create(payload)
+        const created = await notesService.create(cleanPayload(payload))
         set(state => {
           if (state.notes.some(n => n.id === created.id)) return state
           return { notes: [...state.notes, created] }
@@ -390,7 +400,7 @@ const useStore = create(
           set(state => ({ notes: state.notes.map(n => n.id === id ? { ...n, ...data } : n) }))
           return
         }
-        const updated = await notesService.update(id, data)
+        const updated = await notesService.update(id, cleanPayload(data))
         set(state => ({ notes: state.notes.map(n => n.id === id ? updated : n) }))
       },
       deleteNote: async (id) => {

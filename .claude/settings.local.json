@@ -63,7 +63,13 @@
       "Bash(gh auth *)",
       "Bash(curl -s https://agenda-politica-inky.vercel.app/)",
       "Bash(curl -sI https://agenda-politica-inky.vercel.app/)",
-      "mcp__Claude_in_Chrome__read_console_messages"
+      "mcp__Claude_in_Chrome__read_console_messages",
+      "mcp__Claude_in_Chrome__computer",
+      "Bash(sed -i '' 's/appointmentsService\\\\.create\\(payload\\)/appointmentsService.create\\(cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)",
+      "Bash(sed -i '' 's/appointmentsService\\\\.update\\(id, payload\\)/appointmentsService.update\\(id, cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)",
+      "Bash(sed -i '' 's/demandsService\\\\.create\\(payload\\)/demandsService.create\\(cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)",
+      "Bash(sed -i '' 's/demandsService\\\\.update\\(id, { \\\\.\\\\.\\\\.data, updated_by: user?.id }\\)/demandsService.update\\(id, cleanPayload\\({ ...data, updated_by: user?.id }\\)\\)/g' src/store/useStore.js)",
+      "Bash(sed -i '' 's/notesService\\\\.create\\(payload\\)/notesService.create\\(cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)"
     ]
   }
 }
