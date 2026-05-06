@@ -30,16 +30,48 @@ function AuthCallbackPage() {
   const navigate = useNavigate()
   const { checkSession } = useStore()
   useEffect(() => {
-    (async () => {
-      // Aguarda o Supabase processar a URL
-      await new Promise(r => setTimeout(r, 500))
+    let cancelled = false
+    let unsub = null
+
+    const finalize = async () => {
+      if (cancelled) return
       await checkSession?.()
-      // checkSession redireciona implicitamente; navega para raiz como fallback
+      if (cancelled) return
       const { isAuthenticated, needsInviteCode } = useStore.getState()
       if (needsInviteCode) navigate('/codigo-convite', { replace: true })
       else if (isAuthenticated) navigate('/', { replace: true })
       else navigate('/login', { replace: true })
+    }
+
+    ;(async () => {
+      // Importa supabase dinamicamente
+      const { supabase } = await import('@/lib/supabase')
+
+      // 1. Tenta pegar a sessão imediatamente (caso já tenha sido processada)
+      const { data: { session: existingSession } } = await supabase.auth.getSession()
+      if (existingSession) {
+        await finalize()
+        return
+      }
+
+      // 2. Escuta mudanças de auth — quando SIGNED_IN, finaliza
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          await finalize()
+        }
+      })
+      unsub = subscription
+
+      // 3. Fallback: depois de 8s, força finalização (vai pra login se não autenticou)
+      setTimeout(async () => {
+        if (!cancelled) await finalize()
+      }, 8000)
     })()
+
+    return () => {
+      cancelled = true
+      unsub?.unsubscribe?.()
+    }
   }, [])
 
   return (
