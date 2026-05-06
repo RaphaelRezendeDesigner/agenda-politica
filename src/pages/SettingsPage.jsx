@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Settings, Palette, User, Save, Upload, Download, RefreshCw, Database, Loader2, Check, AlertCircle } from 'lucide-react'
+import { Settings, Palette, User, Save, Upload, Download, RefreshCw, Database, Loader2, Check, AlertCircle, Calendar, Copy, ExternalLink } from 'lucide-react'
 import Layout from '@/components/layout/Layout'
 import { Button, Input, Card } from '@/components/ui'
 import useStore from '@/store/useStore'
@@ -355,6 +355,9 @@ export default function SettingsPage() {
           </div>
         </Card>
 
+        {/* Google Calendar Sync */}
+        <CalendarSyncCard currentUser={currentUser} darkMode={darkMode} />
+
         {/* Supabase info */}
         <Card>
           <h2 className={cn('text-lg font-bold mb-3 flex items-center gap-2', darkMode ? 'text-white' : 'text-gray-900')}>
@@ -398,5 +401,97 @@ export default function SettingsPage() {
         )}
       </div>
     </Layout>
+  )
+}
+
+// Componente para sync com Google Calendar via URL assinável
+function CalendarSyncCard({ currentUser, darkMode }) {
+  const [copied, setCopied] = useState(false)
+
+  const token = currentUser?.calendar_token
+  const calendarUrl = token
+    ? `${window.location.origin}/api/calendar/${token}.ics`
+    : null
+  // Google Calendar tem botão "Adicionar por URL" especial
+  const googleAddUrl = calendarUrl
+    ? `https://calendar.google.com/calendar/u/0/r/settings/addbyurl?cid=${encodeURIComponent(calendarUrl)}`
+    : null
+
+  const handleCopy = async () => {
+    if (!calendarUrl) return
+    try {
+      await navigator.clipboard.writeText(calendarUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch (e) { console.error(e) }
+  }
+
+  return (
+    <Card>
+      <h2 className={cn('text-lg font-bold mb-3 flex items-center gap-2', darkMode ? 'text-white' : 'text-gray-900')}>
+        <Calendar size={20} />
+        Sincronizar com Google Calendar / Agenda do Celular
+      </h2>
+
+      {!token ? (
+        <div className={cn('p-4 rounded-xl text-sm', darkMode ? 'bg-gray-700 text-gray-300' : 'bg-yellow-50 text-yellow-800')}>
+          Sua URL de calendário ainda não foi gerada. Faça logout e login novamente para criar.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className={cn('p-3 rounded-xl flex items-center gap-2 text-xs font-mono break-all', darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700')}>
+            <span className="flex-1 select-all">{calendarUrl}</span>
+            <button
+              onClick={handleCopy}
+              className={cn('p-2 rounded-lg flex-shrink-0', darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-200')}
+              title="Copiar URL"
+            >
+              {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <a href={googleAddUrl} target="_blank" rel="noopener noreferrer">
+              <Button>
+                <ExternalLink size={16} />
+                Adicionar ao Google Calendar
+              </Button>
+            </a>
+            <Button onClick={handleCopy} variant="secondary">
+              <Copy size={16} />
+              {copied ? 'Copiado!' : 'Copiar URL'}
+            </Button>
+          </div>
+
+          <details className={cn('text-sm rounded-xl p-3', darkMode ? 'bg-gray-700 text-gray-300' : 'bg-blue-50 text-blue-900')}>
+            <summary className="cursor-pointer font-semibold">
+              📱 Como adicionar no celular (iPhone / Android)
+            </summary>
+            <div className="mt-3 space-y-3 text-xs">
+              <div>
+                <p className="font-semibold mb-1">📱 iPhone (Calendário Apple):</p>
+                <ol className="list-decimal list-inside space-y-1 ml-2">
+                  <li>Abre o app <strong>Ajustes</strong> → <strong>Calendário</strong> → <strong>Contas</strong></li>
+                  <li>Toca em <strong>Adicionar conta</strong> → <strong>Outra</strong></li>
+                  <li>Escolhe <strong>Adicionar Calendário Subscrito</strong></li>
+                  <li>Cola a URL acima e confirma</li>
+                </ol>
+              </div>
+              <div>
+                <p className="font-semibold mb-1">🤖 Android (Google Calendar):</p>
+                <ol className="list-decimal list-inside space-y-1 ml-2">
+                  <li>Clica no botão verde <strong>"Adicionar ao Google Calendar"</strong> acima (precisa fazer no computador)</li>
+                  <li>Aprova a adição no Google Calendar web</li>
+                  <li>No celular, abre o Google Calendar — a agenda aparece automaticamente</li>
+                </ol>
+              </div>
+              <div className={cn('p-2 rounded-lg', darkMode ? 'bg-gray-800' : 'bg-yellow-50 text-yellow-800')}>
+                ⏱️ <strong>Atenção:</strong> O Google atualiza calendários assinados a cada ~3 horas. Para mudanças instantâneas, abra o app diretamente.
+              </div>
+            </div>
+          </details>
+        </div>
+      )}
+    </Card>
   )
 }
