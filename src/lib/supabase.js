@@ -15,6 +15,8 @@ export const supabase = supabaseUrl && supabaseAnonKey
         // Storage explícito
         storage: typeof window !== 'undefined' ? window.localStorage : undefined,
         flowType: 'pkce',
+        // CRITICAL: Desabilita o lock de navigator.locks que fica órfão e trava sync
+        lock: (name, acquireTimeout, fn) => fn(),
       },
       realtime: {
         params: {
