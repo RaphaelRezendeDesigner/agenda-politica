@@ -28,44 +28,69 @@ function ProtectedRoute({ children }) {
 // Página de callback do OAuth (Google etc) — só processa e redireciona
 function AuthCallbackPage() {
   const navigate = useNavigate()
-  const { checkSession } = useStore()
   useEffect(() => {
     let cancelled = false
     let unsub = null
 
-    const finalize = async () => {
+    // Versão "lite" do checkSession: só pega profile e redireciona.
+    // O syncFromServer roda em background depois.
+    const finalize = async (session) => {
       if (cancelled) return
-      await checkSession?.()
+      const { supabase } = await import('@/lib/supabase')
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .maybeSingle()
+
       if (cancelled) return
-      const { isAuthenticated, needsInviteCode } = useStore.getState()
-      if (needsInviteCode) navigate('/codigo-convite', { replace: true })
-      else if (isAuthenticated) navigate('/', { replace: true })
-      else navigate('/login', { replace: true })
+
+      if (profile) {
+        useStore.setState({
+          currentUser: profile,
+          isAuthenticated: true,
+          needsInviteCode: false,
+          authUserId: null,
+        })
+        navigate('/', { replace: true })
+        // Sync em background (não bloqueia navegação)
+        useStore.getState().syncFromServer?.()
+      } else {
+        useStore.setState({
+          currentUser: null,
+          isAuthenticated: false,
+          needsInviteCode: true,
+          authUserId: session.user.id,
+          authUserEmail: session.user.email,
+          authUserMeta: session.user.user_metadata,
+        })
+        navigate('/codigo-convite', { replace: true })
+      }
     }
 
     ;(async () => {
-      // Importa supabase dinamicamente
       const { supabase } = await import('@/lib/supabase')
 
-      // 1. Tenta pegar a sessão imediatamente (caso já tenha sido processada)
+      // 1. Tenta pegar a sessão imediatamente
       const { data: { session: existingSession } } = await supabase.auth.getSession()
       if (existingSession) {
-        await finalize()
+        await finalize(existingSession)
         return
       }
 
-      // 2. Escuta mudanças de auth — quando SIGNED_IN, finaliza
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          await finalize()
+      // 2. Escuta SIGNED_IN
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
+          await finalize(session)
         }
       })
       unsub = subscription
 
-      // 3. Fallback: depois de 8s, força finalização (vai pra login se não autenticou)
-      setTimeout(async () => {
-        if (!cancelled) await finalize()
-      }, 8000)
+      // 3. Fallback: 6s sem auth → manda pro login
+      setTimeout(() => {
+        if (!cancelled) navigate('/login', { replace: true })
+      }, 6000)
     })()
 
     return () => {

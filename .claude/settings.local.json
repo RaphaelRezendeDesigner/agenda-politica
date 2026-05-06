@@ -69,7 +69,8 @@
       "Bash(sed -i '' 's/appointmentsService\\\\.update\\(id, payload\\)/appointmentsService.update\\(id, cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)",
       "Bash(sed -i '' 's/demandsService\\\\.create\\(payload\\)/demandsService.create\\(cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)",
       "Bash(sed -i '' 's/demandsService\\\\.update\\(id, { \\\\.\\\\.\\\\.data, updated_by: user?.id }\\)/demandsService.update\\(id, cleanPayload\\({ ...data, updated_by: user?.id }\\)\\)/g' src/store/useStore.js)",
-      "Bash(sed -i '' 's/notesService\\\\.create\\(payload\\)/notesService.create\\(cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)"
+      "Bash(sed -i '' 's/notesService\\\\.create\\(payload\\)/notesService.create\\(cleanPayload\\(payload\\)\\)/g' src/store/useStore.js)",
+      "Bash(curl -s -A 'Mozilla/5.0' https://agenda-politica-inky.vercel.app/)"
     ]
   }
 }
