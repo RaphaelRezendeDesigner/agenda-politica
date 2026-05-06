@@ -1,5 +1,5 @@
-import { useState, useRef, useMemo } from 'react'
-import { format, addDays } from 'date-fns'
+import { useState, useRef, useMemo, forwardRef } from 'react'
+import { format, addDays, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Image, Download, Calendar, Clock, Palette, Loader2, FileText } from 'lucide-react'
 import Layout from '@/components/layout/Layout'
@@ -30,6 +30,7 @@ const fmtWeekday = (dateStr) => {
 export default function ArtGeneratorPage() {
   const { appointments, settings, team, darkMode } = useStore()
   const artRef = useRef()
+  const pdfRef = useRef()
 
   const today = format(new Date(), 'yyyy-MM-dd')
   const [artDate, setArtDate] = useState(today)
@@ -101,26 +102,76 @@ export default function ArtGeneratorPage() {
         import('html2canvas'),
         import('jspdf'),
       ])
-      const canvas = await html2canvas(artRef.current, {
+
+      const target = pdfRef.current
+      if (!target) throw new Error('Layout do PDF não encontrado')
+
+      // Captura altura natural completa (sem corte)
+      const naturalHeight = target.scrollHeight
+      const naturalWidth = target.scrollWidth
+
+      const canvas = await html2canvas(target, {
         scale: 2,
         useCORS: true,
         allowTaint: false,
         backgroundColor: '#ffffff',
         logging: false,
-        width: formatCfg.width,
-        height: formatCfg.height,
+        width: naturalWidth,
+        height: naturalHeight,
+        windowWidth: naturalWidth,
+        windowHeight: naturalHeight,
       })
-      const imgData = canvas.toDataURL('image/jpeg', 0.92)
-      // PDF na proporção do formato escolhido
-      const isPortrait = formatCfg.height > formatCfg.width
+
+      // Dimensões A4 em pontos
+      const A4_W = 595
+      const A4_H = 842
+      const PAGE_MARGIN = 0
+
+      // Largura da imagem no PDF = A4 inteira
+      const imgWidth = A4_W - PAGE_MARGIN * 2
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+
       const pdf = new jsPDF({
-        orientation: isPortrait ? 'portrait' : 'landscape',
+        orientation: 'portrait',
         unit: 'pt',
-        format: [formatCfg.width, formatCfg.height],
+        format: 'a4',
         compress: true,
       })
-      pdf.addImage(imgData, 'JPEG', 0, 0, formatCfg.width, formatCfg.height, undefined, 'FAST')
-      pdf.save(`agenda-${artDate}-${format_}.pdf`)
+
+      // Se a imagem cabe em 1 página
+      if (imgHeight <= A4_H - PAGE_MARGIN * 2) {
+        const imgData = canvas.toDataURL('image/jpeg', 0.92)
+        pdf.addImage(imgData, 'JPEG', PAGE_MARGIN, PAGE_MARGIN, imgWidth, imgHeight, undefined, 'FAST')
+      } else {
+        // Quebra em várias páginas
+        const pageHeightPx = (canvas.width * (A4_H - PAGE_MARGIN * 2)) / imgWidth
+        let yOffset = 0
+        let pageNum = 0
+
+        while (yOffset < canvas.height) {
+          const sliceHeight = Math.min(pageHeightPx, canvas.height - yOffset)
+
+          // Cria canvas temporário com a fatia
+          const sliceCanvas = document.createElement('canvas')
+          sliceCanvas.width = canvas.width
+          sliceCanvas.height = sliceHeight
+          const ctx = sliceCanvas.getContext('2d')
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, canvas.width, sliceHeight)
+          ctx.drawImage(canvas, 0, -yOffset)
+
+          const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92)
+          const sliceHeightPt = (sliceHeight * imgWidth) / canvas.width
+
+          if (pageNum > 0) pdf.addPage()
+          pdf.addImage(sliceData, 'JPEG', PAGE_MARGIN, PAGE_MARGIN, imgWidth, sliceHeightPt, undefined, 'FAST')
+
+          yOffset += sliceHeight
+          pageNum++
+        }
+      }
+
+      pdf.save(`agenda-${artDate}-${mode}.pdf`)
     } catch (e) {
       console.error(e)
       alert('Erro ao gerar PDF: ' + e.message)
@@ -697,7 +748,7 @@ export default function ArtGeneratorPage() {
         </div>
       </div>
 
-      {/* Off-screen full-size canvas para captura */}
+      {/* Off-screen full-size canvas para captura PNG (formato fixo) */}
       <div style={{
         position: 'fixed', top: 0, left: -99999,
         width: formatCfg.width, height: formatCfg.height,
@@ -705,6 +756,197 @@ export default function ArtGeneratorPage() {
       }}>
         <ArtCanvas refTarget={artRef} />
       </div>
+
+      {/* Off-screen layout para PDF — largura fixa A4-equivalente, altura natural */}
+      <div style={{
+        position: 'fixed', top: 0, left: -99999,
+        width: 1080, // largura ampla pra qualidade
+        pointerEvents: 'none', zIndex: -1,
+      }}>
+        <PDFLayout
+          ref={pdfRef}
+          appointments={selectedApts}
+          settings={settings}
+          team={team}
+          mode={mode}
+          startDate={artDate}
+          endDate={mode === 'mes' ? artEndDate : (mode === 'semana' ? format(addDays(new Date(artDate), 6), 'yyyy-MM-dd') : artDate)}
+          showLocation={showLocation}
+          showEndTime={showEndTime}
+          showType={showType}
+          showResponsible={showResponsible}
+          showObservations={showObservations}
+          getResponsibleName={getResponsibleName}
+        />
+      </div>
     </Layout>
   )
 }
+
+// Layout dedicado para PDF — vertical, com altura natural, sem cortes
+const PDFLayout = forwardRef(function PDFLayout(props, ref) {
+  const {
+    appointments, settings, mode, startDate, endDate,
+    showLocation, showEndTime, showType, showResponsible, showObservations,
+    getResponsibleName,
+  } = props
+
+  const primaryColor = settings?.primary_color || '#1a3a6b'
+  const secondaryColor = settings?.secondary_color || '#c9a84c'
+  const candidateName = settings?.candidate_name || 'Agenda Política'
+
+  // Agrupa por data
+  const grouped = appointments.reduce((acc, apt) => {
+    if (!acc[apt.date]) acc[apt.date] = []
+    acc[apt.date].push(apt)
+    return acc
+  }, {})
+  const dates = Object.keys(grouped).sort()
+
+  const titleText = mode === 'dia'
+    ? `Agenda de ${format(parseISO(startDate), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`
+    : mode === 'semana'
+    ? `Agenda Semanal — ${format(parseISO(startDate), 'dd/MM')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}`
+    : `Agenda — ${format(parseISO(startDate), 'dd/MM')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}`
+
+  return (
+    <div ref={ref} style={{
+      background: '#ffffff',
+      width: 1080,
+      padding: 40,
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+      color: '#1f2937',
+      boxSizing: 'border-box',
+    }}>
+      {/* Header */}
+      <div style={{
+        background: primaryColor,
+        color: '#fff',
+        padding: '28px 32px',
+        borderRadius: 16,
+        marginBottom: 24,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 20,
+      }}>
+        {settings?.logo_url && (
+          <img src={settings.logo_url} alt="logo" crossOrigin="anonymous" style={{
+            width: 64, height: 64, borderRadius: 12, objectFit: 'cover', flexShrink: 0,
+          }} />
+        )}
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 14, opacity: 0.85, margin: 0, marginBottom: 4 }}>{candidateName}</p>
+          <h1 style={{ fontSize: 28, margin: 0, fontWeight: 800 }}>{titleText}</h1>
+        </div>
+        <div style={{
+          background: secondaryColor,
+          color: primaryColor,
+          padding: '8px 14px',
+          borderRadius: 999,
+          fontWeight: 700,
+          fontSize: 14,
+          flexShrink: 0,
+        }}>
+          {appointments.length} {appointments.length === 1 ? 'compromisso' : 'compromissos'}
+        </div>
+      </div>
+
+      {/* Grupos por data */}
+      {dates.map(date => {
+        const items = grouped[date]
+        const dayLabel = format(parseISO(date), "EEEE, dd 'de' MMMM", { locale: ptBR })
+        return (
+          <div key={date} style={{ marginBottom: 28 }}>
+            <h2 style={{
+              fontSize: 18, fontWeight: 700,
+              color: primaryColor, margin: 0, marginBottom: 12,
+              padding: '8px 14px',
+              background: `${primaryColor}15`,
+              borderLeft: `4px solid ${primaryColor}`,
+              borderRadius: 6,
+              textTransform: 'capitalize',
+            }}>
+              {dayLabel}
+            </h2>
+
+            {items.map(apt => {
+              const responsible = showResponsible ? getResponsibleName(apt.responsible_id) : null
+              return (
+                <div key={apt.id} style={{
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 12,
+                  padding: 18,
+                  marginBottom: 12,
+                  borderLeft: `5px solid ${secondaryColor}`,
+                  pageBreakInside: 'avoid',
+                  breakInside: 'avoid',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 8 }}>
+                    {(apt.start_time || apt.end_time) && (
+                      <div style={{
+                        background: primaryColor,
+                        color: '#fff',
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        fontSize: 14,
+                        flexShrink: 0,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {apt.start_time || ''}{showEndTime && apt.end_time ? ` — ${apt.end_time}` : ''}
+                      </div>
+                    )}
+                    <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#111827', flex: 1 }}>
+                      {apt.title}
+                    </h3>
+                  </div>
+
+                  {showLocation && (apt.location || apt.address) && (
+                    <p style={{ margin: '6px 0', fontSize: 14, color: '#4b5563' }}>
+                      📍 {[apt.location, apt.address, apt.neighborhood, apt.city].filter(Boolean).join(', ')}
+                    </p>
+                  )}
+
+                  {showType && apt.type && (
+                    <p style={{ margin: '6px 0', fontSize: 13, color: '#6b7280' }}>
+                      🏷️ {apt.type}
+                    </p>
+                  )}
+
+                  {responsible && (
+                    <p style={{ margin: '6px 0', fontSize: 13, color: '#6b7280' }}>
+                      👤 {responsible}
+                    </p>
+                  )}
+
+                  {showObservations && apt.observations && (
+                    <p style={{
+                      margin: '10px 0 0',
+                      fontSize: 13,
+                      color: '#374151',
+                      padding: 10,
+                      background: '#f9fafb',
+                      borderRadius: 6,
+                      whiteSpace: 'pre-wrap',
+                    }}>
+                      {apt.observations}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+
+      {/* Footer */}
+      <div style={{
+        marginTop: 30, paddingTop: 16,
+        borderTop: '1px solid #e5e7eb',
+        textAlign: 'center', fontSize: 12, color: '#9ca3af',
+      }}>
+        Gerado em {format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} • Agenda Política
+      </div>
+    </div>
+  )
+})
