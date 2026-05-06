@@ -232,11 +232,13 @@ const useStore = create(
         return result
       },
       updateTeamMember: async (id, data) => {
+        // Remove campos que não existem na tabela profiles (password é só do auth)
+        const { password, sendInvite, ...profileFields } = data || {}
         if (!isSupabaseConfigured) {
-          set(state => ({ team: state.team.map(m => m.id === id ? { ...m, ...data } : m) }))
+          set(state => ({ team: state.team.map(m => m.id === id ? { ...m, ...profileFields } : m) }))
           return
         }
-        const updated = await profilesService.update(id, data)
+        const updated = await profilesService.update(id, cleanPayload(profileFields))
         set(state => ({ team: state.team.map(m => m.id === id ? updated : m) }))
         // Se foi o próprio usuário, atualiza também currentUser
         if (id === get().currentUser?.id) {
