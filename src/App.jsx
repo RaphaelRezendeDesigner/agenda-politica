@@ -81,6 +81,13 @@ function AuthCallbackPage() {
       }
     }
 
+    const withTimeout = (promise, ms, label) => {
+      return Promise.race([
+        promise,
+        new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout: ${label}`)), ms))
+      ])
+    }
+
     ;(async () => {
       const { supabase } = await import('@/lib/supabase')
 
@@ -90,29 +97,62 @@ function AuthCallbackPage() {
 
       try {
         if (code) {
-          // Exchange explícito do code pra sessão (evita lock hang)
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-          if (error) {
-            console.error('exchangeCodeForSession:', error)
-            // Tenta getSession como fallback
-            const { data: { session: fallbackSession } } = await supabase.auth.getSession()
-            if (fallbackSession) {
-              await finalizeWithSession(fallbackSession)
+          // Tenta exchange via SDK com timeout de 5s
+          try {
+            const { data, error } = await withTimeout(
+              supabase.auth.exchangeCodeForSession(code),
+              5000,
+              'exchangeCodeForSession'
+            )
+            if (error) throw error
+            if (data?.session) {
+              await finalizeWithSession(data.session)
               return
             }
-            navigate('/login', { replace: true })
-            return
-          }
-          if (data?.session) {
-            await finalizeWithSession(data.session)
-            return
+          } catch (e) {
+            console.warn('SDK exchange falhou:', e.message)
+            // Fallback: tenta exchange via REST direto
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+            const apikey = import.meta.env.VITE_SUPABASE_ANON_KEY
+            // Pega code_verifier do localStorage (PKCE)
+            const verifierKey = Object.keys(localStorage).find(k => k.endsWith('-code-verifier'))
+            const verifier = verifierKey ? JSON.parse(localStorage.getItem(verifierKey)) : null
+
+            const r = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
+              method: 'POST',
+              headers: {
+                'apikey': apikey,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({ auth_code: code, code_verifier: verifier }),
+            })
+            if (r.ok) {
+              const tokenData = await r.json()
+              const sessionLike = {
+                access_token: tokenData.access_token,
+                refresh_token: tokenData.refresh_token,
+                expires_at: Math.floor(Date.now() / 1000) + (tokenData.expires_in || 3600),
+                user: tokenData.user,
+              }
+              // Salva sessão no localStorage no formato que o Supabase espera
+              const sbKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+                || `sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`
+              localStorage.setItem(sbKey, JSON.stringify(sessionLike))
+              if (verifierKey) localStorage.removeItem(verifierKey)
+              await finalizeWithSession(sessionLike)
+              return
+            } else {
+              const errBody = await r.text()
+              console.error('REST exchange falhou:', r.status, errBody)
+            }
           }
         }
 
-        // Fallback: já existe sessão?
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session) {
-          await finalizeWithSession(session)
+        // Fallback: já existe sessão salva?
+        const sbKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+        const savedSession = sbKey ? JSON.parse(localStorage.getItem(sbKey)) : null
+        if (savedSession?.access_token) {
+          await finalizeWithSession(savedSession)
         } else {
           navigate('/login', { replace: true })
         }

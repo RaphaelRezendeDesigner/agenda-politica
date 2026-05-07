@@ -17,10 +17,11 @@ export const supabase = supabaseUrl && supabaseAnonKey
       auth: {
         autoRefreshToken: true,
         persistSession: true,
-        detectSessionInUrl: true,
+        // Desabilitado: nós fazemos o exchange manualmente no AuthCallbackPage
+        // pra evitar race condition + lock hang
+        detectSessionInUrl: false,
         storage: typeof window !== 'undefined' ? window.localStorage : undefined,
         flowType: 'pkce',
-        // Lock customizado: evita o navigator.locks órfão que travava o sync
         lock: memoryLock,
       },
       realtime: {
