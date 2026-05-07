@@ -30,20 +30,33 @@ function AuthCallbackPage() {
   const navigate = useNavigate()
   useEffect(() => {
     let cancelled = false
-    let unsub = null
 
-    // Versão "lite" do checkSession: só pega profile e redireciona.
-    // O syncFromServer roda em background depois.
-    const finalize = async (session) => {
-      if (cancelled) return
-      const { supabase } = await import('@/lib/supabase')
+    const fetchProfile = async (userId, accessToken) => {
+      // Busca profile usando fetch direto (não passa pelo lock do SDK)
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const apikey = import.meta.env.VITE_SUPABASE_ANON_KEY
+      try {
+        const r = await fetch(
+          `${supabaseUrl}/rest/v1/profiles?select=*&id=eq.${userId}`,
+          {
+            headers: {
+              'apikey': apikey,
+              'authorization': `Bearer ${accessToken}`,
+              'accept': 'application/json',
+            },
+          }
+        )
+        const data = await r.json()
+        return Array.isArray(data) && data.length > 0 ? data[0] : null
+      } catch (e) {
+        console.error('fetchProfile:', e)
+        return null
+      }
+    }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle()
-
+    const finalizeWithSession = async (session) => {
+      if (cancelled || !session) return
+      const profile = await fetchProfile(session.user.id, session.access_token)
       if (cancelled) return
 
       if (profile) {
@@ -54,7 +67,6 @@ function AuthCallbackPage() {
           authUserId: null,
         })
         navigate('/', { replace: true })
-        // Sync em background (não bloqueia navegação)
         useStore.getState().syncFromServer?.()
       } else {
         useStore.setState({
@@ -72,30 +84,55 @@ function AuthCallbackPage() {
     ;(async () => {
       const { supabase } = await import('@/lib/supabase')
 
-      // 1. Tenta pegar a sessão imediatamente
-      const { data: { session: existingSession } } = await supabase.auth.getSession()
-      if (existingSession) {
-        await finalize(existingSession)
-        return
-      }
+      // Pega code da URL (PKCE flow)
+      const url = new URL(window.location.href)
+      const code = url.searchParams.get('code')
 
-      // 2. Escuta SIGNED_IN
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
-          await finalize(session)
+      try {
+        if (code) {
+          // Exchange explícito do code pra sessão (evita lock hang)
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+          if (error) {
+            console.error('exchangeCodeForSession:', error)
+            // Tenta getSession como fallback
+            const { data: { session: fallbackSession } } = await supabase.auth.getSession()
+            if (fallbackSession) {
+              await finalizeWithSession(fallbackSession)
+              return
+            }
+            navigate('/login', { replace: true })
+            return
+          }
+          if (data?.session) {
+            await finalizeWithSession(data.session)
+            return
+          }
         }
-      })
-      unsub = subscription
 
-      // 3. Fallback: 6s sem auth → manda pro login
-      setTimeout(() => {
-        if (!cancelled) navigate('/login', { replace: true })
-      }, 6000)
+        // Fallback: já existe sessão?
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          await finalizeWithSession(session)
+        } else {
+          navigate('/login', { replace: true })
+        }
+      } catch (e) {
+        console.error('Auth callback error:', e)
+        navigate('/login', { replace: true })
+      }
     })()
+
+    // Failsafe absoluto: 12s
+    const failsafe = setTimeout(() => {
+      if (!cancelled) {
+        console.warn('Auth callback failsafe — forcing navigation')
+        navigate('/login', { replace: true })
+      }
+    }, 12000)
 
     return () => {
       cancelled = true
-      unsub?.unsubscribe?.()
+      clearTimeout(failsafe)
     }
   }, [])
 
